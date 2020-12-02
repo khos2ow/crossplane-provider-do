@@ -82,3 +82,16 @@ func LateInitializeSpec(p *v1alpha1.DropletParameters, observed godo.Droplet) {
 	p.Tags = do.LateInitializeStringSlice(p.Tags, observed.Tags)
 	p.VPCUUID = do.LateInitializeString(p.VPCUUID, observed.VPCUUID)
 }
+
+// IsErrorNotFound checks for response of DigitalOcean GET API call
+// to identify if the result is '404 not found' error or something
+// else.
+func IsErrorNotFound(err error, response *godo.Response) error {
+	if err.Error() == "dropletID is invalid because cannot be less than 1" {
+		return nil
+	}
+	if response != nil && response.StatusCode == 404 {
+		return nil
+	}
+	return err
+}

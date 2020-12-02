@@ -18,6 +18,7 @@ package compute
 
 import (
 	"context"
+	"time"
 
 	"github.com/digitalocean/godo"
 	"github.com/google/go-cmp/cmp"
@@ -87,9 +88,9 @@ func (c *dropletExternal) Observe(ctx context.Context, mg resource.Managed) (man
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errNotDroplet)
 	}
-	observed, _, err := c.Droplets.Get(ctx, cr.Status.AtProvider.ID)
+	observed, response, err := c.Droplets.Get(ctx, cr.Status.AtProvider.ID)
 	if err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, errGetDroplet)
+		return managed.ExternalObservation{}, errors.Wrap(docompute.IsErrorNotFound(err, response), errGetDroplet)
 	}
 
 	currentSpec := cr.Spec.ForProvider.DeepCopy()
@@ -132,7 +133,7 @@ func (c *dropletExternal) Create(ctx context.Context, mg resource.Managed) (mana
 	docompute.GenerateDroplet(meta.GetExternalName(cr), cr.Spec.ForProvider, create)
 
 	droplet, _, err := c.Droplets.Create(ctx, create)
-	if err != nil {
+	if err == nil {
 		cr.Status.AtProvider.ID = droplet.ID
 		cr.Status.AtProvider.CreationTimestamp = droplet.Created
 		cr.Status.AtProvider.Status = droplet.Status
@@ -152,6 +153,7 @@ func (c *dropletExternal) Delete(ctx context.Context, mg resource.Managed) error
 	}
 
 	cr.Status.SetConditions(xpv1.Deleting())
+
 	_, err := c.Droplets.Delete(ctx, cr.Status.AtProvider.ID)
 	return errors.Wrap(err, errDropletDeleteFailed)
 }
