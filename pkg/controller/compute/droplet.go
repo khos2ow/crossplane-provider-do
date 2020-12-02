@@ -137,6 +137,11 @@ func (c *dropletExternal) Create(ctx context.Context, mg resource.Managed) (mana
 		cr.Status.AtProvider.ID = droplet.ID
 		cr.Status.AtProvider.CreationTimestamp = droplet.Created
 		cr.Status.AtProvider.Status = droplet.Status
+
+		// TODO(khos2ow): when we go from here back to Observe() `AtProvider.ID`
+		// is still empty which causes the observer to send a create request to
+		// DigitalOcean API once more! This may help :cross-finger:
+		time.Sleep(1 * time.Second)
 	}
 	return managed.ExternalCreation{}, errors.Wrap(err, errDropletCreateFailed)
 }
