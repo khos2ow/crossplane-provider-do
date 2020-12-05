@@ -18,7 +18,7 @@ package compute
 
 import (
 	"context"
-	"time"
+	"strconv"
 
 	"github.com/digitalocean/godo"
 	"github.com/google/go-cmp/cmp"
@@ -88,9 +88,16 @@ func (c *dropletExternal) Observe(ctx context.Context, mg resource.Managed) (man
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errNotDroplet)
 	}
-	observed, response, err := c.Droplets.Get(ctx, cr.Status.AtProvider.ID)
+	externalID, err := strconv.Atoi(cr.ObjectMeta.Annotations[meta.AnnotationKeyExternalName])
 	if err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(docompute.IsErrorNotFound(err, response), errGetDroplet)
+		// on the first try the value of 'crossplane.io/external-name' annotaion
+		// is name of the 'Droplet' resource (i.e. type string,) which will get
+		// updated to id (i.e. type int) of managed resource when it gets created.
+		externalID = 0
+	}
+	observed, response, err := c.Droplets.Get(ctx, externalID)
+	if err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(docompute.IgnoreNotFound(err, response), errGetDroplet)
 	}
 
 	currentSpec := cr.Spec.ForProvider.DeepCopy()
@@ -134,16 +141,18 @@ func (c *dropletExternal) Create(ctx context.Context, mg resource.Managed) (mana
 
 	droplet, _, err := c.Droplets.Create(ctx, create)
 	if err == nil {
-		cr.Status.AtProvider.ID = droplet.ID
-		cr.Status.AtProvider.CreationTimestamp = droplet.Created
-		cr.Status.AtProvider.Status = droplet.Status
+		if cr.ObjectMeta.Annotations == nil {
+			cr.ObjectMeta.Annotations = make(map[string]string)
+		}
+		cr.ObjectMeta.Annotations[meta.AnnotationKeyExternalName] = strconv.Itoa(droplet.ID)
 
-		// TODO(khos2ow): when we go from here back to Observe() `AtProvider.ID`
-		// is still empty which causes the observer to send a create request to
-		// DigitalOcean API once more! This may help :cross-finger:
-		time.Sleep(1 * time.Second)
+		cr.Status.AtProvider = v1alpha1.DropletObservation{
+			ID:                droplet.ID,
+			CreationTimestamp: droplet.Created,
+			Status:            droplet.Status,
+		}
 	}
-	return managed.ExternalCreation{}, errors.Wrap(err, errDropletCreateFailed)
+	return managed.ExternalCreation{ExternalNameAssigned: true}, errors.Wrap(err, errDropletCreateFailed)
 }
 
 func (c *dropletExternal) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
