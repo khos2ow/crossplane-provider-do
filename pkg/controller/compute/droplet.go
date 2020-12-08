@@ -140,17 +140,9 @@ func (c *dropletExternal) Create(ctx context.Context, mg resource.Managed) (mana
 	docompute.GenerateDroplet(meta.GetExternalName(cr), cr.Spec.ForProvider, create)
 
 	droplet, _, err := c.Droplets.Create(ctx, create)
-	if err == nil {
-		if cr.ObjectMeta.Annotations == nil {
-			cr.ObjectMeta.Annotations = make(map[string]string)
-		}
-		cr.ObjectMeta.Annotations[meta.AnnotationKeyExternalName] = strconv.Itoa(droplet.ID)
-
-		cr.Status.AtProvider = v1alpha1.DropletObservation{
-			ID:                droplet.ID,
-			CreationTimestamp: droplet.Created,
-			Status:            droplet.Status,
-		}
+	if err == nil && droplet != nil {
+		a := map[string]string{meta.AnnotationKeyExternalName: strconv.Itoa(droplet.ID)}
+		meta.AddAnnotations(cr, a)
 	}
 	return managed.ExternalCreation{ExternalNameAssigned: true}, errors.Wrap(err, errDropletCreateFailed)
 }
@@ -168,6 +160,6 @@ func (c *dropletExternal) Delete(ctx context.Context, mg resource.Managed) error
 
 	cr.Status.SetConditions(xpv1.Deleting())
 
-	_, err := c.Droplets.Delete(ctx, cr.Status.AtProvider.ID)
-	return errors.Wrap(err, errDropletDeleteFailed)
+	response, err := c.Droplets.Delete(ctx, cr.Status.AtProvider.ID)
+	return errors.Wrap(docompute.IgnoreNotFound(err, response), errDropletDeleteFailed)
 }
